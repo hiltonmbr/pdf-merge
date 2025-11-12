@@ -16,8 +16,9 @@ from reportlab.platypus import Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 from config import *
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 SCOPES = [
@@ -29,21 +30,20 @@ SCOPES = [
 def google_auth():
     """
     Authenticates with Google Drive API using OAuth2.
-    
+
     Returns:
         Resource: Authenticated Google Drive service
-        
+
     Raises:
         FileNotFoundError: If credentials.json is not found
-        
+
     Note:
         On first run, this will open a browser for authentication.
         Make sure you're added as a test user in Google Cloud Console:
         https://console.cloud.google.com/apis/credentials/consent
     """
     creds = None
-    
-    # Load saved credentials
+
     if os.path.exists('token.json'):
         try:
             creds = Credentials.from_authorized_user_file('token.json', SCOPES)
@@ -53,7 +53,6 @@ def google_auth():
             logger.info("Will re-authenticate...")
             creds = None
 
-    # Refresh or obtain new credentials
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
@@ -64,7 +63,7 @@ def google_auth():
                 logger.error(f"Error refreshing token: {e}")
                 logger.info("Will obtain new credentials...")
                 creds = None
-        
+
         if not creds:
             if not os.path.exists('credentials.json'):
                 raise FileNotFoundError(
@@ -82,13 +81,15 @@ def google_auth():
                     "https://console.cloud.google.com/apis/credentials/consent\n"
                     "="*60
                 )
-            
+
             logger.info("Starting OAuth authentication flow...")
             logger.info("A browser window will open for authentication")
-            logger.info("If you see 'This app isn't verified', click 'Advanced' → 'Go to [app name] (unsafe)'")
-            
+            logger.info(
+                "If you see 'This app isn't verified', click 'Advanced' → 'Go to [app name] (unsafe)'")
+
             try:
-                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'credentials.json', SCOPES)
                 creds = flow.run_local_server(port=0)
                 logger.info("✓ Authentication completed successfully")
             except Exception as e:
@@ -96,10 +97,10 @@ def google_auth():
                 logger.error("\nCommon issues:")
                 logger.error("1. Make sure you're added as a test user")
                 logger.error("2. Check OAuth consent screen is configured")
-                logger.error("3. Verify scopes are added: drive.file, drive.readonly")
+                logger.error(
+                    "3. Verify scopes are added: drive.file, drive.readonly")
                 raise
-        
-        # Save credentials for future use
+
         try:
             with open('token.json', 'w') as token:
                 token.write(creds.to_json())
@@ -113,11 +114,11 @@ def google_auth():
 def get_subfolders(service, parent_folder_id: str) -> List[Dict[str, str]]:
     """
     Gets all subfolders from a parent folder.
-    
+
     Args:
         service: Authenticated Google Drive service
         parent_folder_id: Parent folder ID
-        
+
     Returns:
         List of dictionaries with 'id' and 'name' keys
     """
@@ -128,12 +129,12 @@ def get_subfolders(service, parent_folder_id: str) -> List[Dict[str, str]]:
             fields="files(id, name)",
             orderBy="name"
         ).execute()
-        
+
         subfolders = results.get('files', [])
         logger.info(f"Found {len(subfolders)} subfolders")
-        
+
         return subfolders
-        
+
     except HttpError as e:
         logger.error(f"Error listing subfolders: {e}")
         raise
@@ -142,18 +143,18 @@ def get_subfolders(service, parent_folder_id: str) -> List[Dict[str, str]]:
 def download_files_from_folder(service, folder_id: str, folder_name: str = "") -> List[Tuple[str, io.BytesIO]]:
     """
     Downloads all PDF files from a specific folder.
-    
+
     Args:
         service: Authenticated Google Drive service
         folder_id: Google Drive folder ID
         folder_name: Optional folder name for logging
-        
+
     Returns:
         List of tuples (filename, bytes_content) sorted by name
     """
     files = []
     log_prefix = f"[{folder_name}] " if folder_name else ""
-    
+
     try:
         query = f"'{folder_id}' in parents and mimeType='application/pdf' and trashed=false"
         results = service.files().list(
@@ -161,44 +162,47 @@ def download_files_from_folder(service, folder_id: str, folder_name: str = "") -
             fields="files(id, name, size)",
             orderBy="name"
         ).execute()
-        
+
         items = results.get('files', [])
-        
+
         if not items:
             logger.warning(f"{log_prefix}No PDF files found")
             return files
-        
+
         logger.info(f"{log_prefix}Found {len(items)} PDF files")
-        
+
         for item in items:
             try:
                 size_mb = int(item.get('size', 0)) / (1024 * 1024)
-                logger.info(f"{log_prefix}Downloading: {item['name']} ({size_mb:.2f} MB)")
-                
+                logger.info(
+                    f"{log_prefix}Downloading: {item['name']} ({size_mb:.2f} MB)")
+
                 request = service.files().get_media(fileId=item['id'])
                 fh = io.BytesIO()
                 downloader = MediaIoBaseDownload(fh, request)
-                
+
                 done = False
                 while not done:
                     status, done = downloader.next_chunk()
                     if status:
                         progress = int(status.progress() * 100)
                         logger.debug(f"{log_prefix}  Progress: {progress}%")
-                
+
                 fh.seek(0)
                 files.append((item['name'], fh))
                 logger.info(f"{log_prefix}  ✓ Downloaded successfully")
-                
+
             except HttpError as e:
-                logger.error(f"{log_prefix}Error downloading {item['name']}: {e}")
+                logger.error(
+                    f"{log_prefix}Error downloading {item['name']}: {e}")
             except Exception as e:
-                logger.error(f"{log_prefix}Unexpected error downloading {item['name']}: {e}")
-        
+                logger.error(
+                    f"{log_prefix}Unexpected error downloading {item['name']}: {e}")
+
     except HttpError as e:
         logger.error(f"{log_prefix}Error listing files: {e}")
         raise
-    
+
     return sorted(files, key=lambda x: x[0])
 
 
@@ -206,48 +210,48 @@ def download_files_with_subfolders(service, parent_folder_id: str) -> List[Tuple
     """
     Downloads PDFs from parent folder and all subfolders.
     Each subfolder becomes a section with its own title page.
-    
+
     Args:
         service: Authenticated Google Drive service
         parent_folder_id: Parent folder ID
-        
+
     Returns:
         List of tuples (section_title, list_of_pdfs)
     """
     sections = []
-    
+
     try:
-        # Get all subfolders
         subfolders = get_subfolders(service, parent_folder_id)
-        
+
         if not subfolders:
-            logger.warning("No subfolders found. Downloading from parent folder only.")
-            pdfs = download_files_from_folder(service, parent_folder_id, "Root")
+            logger.warning(
+                "No subfolders found. Downloading from parent folder only.")
+            pdfs = download_files_from_folder(
+                service, parent_folder_id, "Root")
             if pdfs:
                 sections.append(("DOCUMENTS", pdfs))
             return sections
-        
-        # Download PDFs from each subfolder
+
         for subfolder in subfolders:
             folder_id = subfolder['id']
             folder_name = subfolder['name']
-            
+
             logger.info(f"\n{'='*60}")
             logger.info(f"Processing subfolder: {folder_name}")
             logger.info(f"{'='*60}")
-            
+
             pdfs = download_files_from_folder(service, folder_id, folder_name)
-            
+
             if pdfs:
-                # Use folder name as section title (uppercase for consistency)
                 section_title = folder_name.upper()
                 sections.append((section_title, pdfs))
-                logger.info(f"✓ Section '{section_title}' ready with {len(pdfs)} PDFs")
+                logger.info(
+                    f"✓ Section '{section_title}' ready with {len(pdfs)} PDFs")
             else:
                 logger.warning(f"Skipping empty folder: {folder_name}")
-        
+
         return sections
-        
+
     except Exception as e:
         logger.error(f"Error processing subfolders: {e}")
         raise
@@ -256,11 +260,11 @@ def download_files_with_subfolders(service, parent_folder_id: str) -> List[Tuple
 def download_files(service, folder_id: str) -> List[Tuple[str, io.BytesIO]]:
     """
     Downloads all PDF files from a Google Drive folder (legacy function for backward compatibility).
-    
+
     Args:
         service: Authenticated Google Drive service
         folder_id: Google Drive folder ID
-        
+
     Returns:
         List of tuples (filename, bytes_content) sorted by name
     """
@@ -270,10 +274,10 @@ def download_files(service, folder_id: str) -> List[Tuple[str, io.BytesIO]]:
 def create_page(title: str) -> PdfReader:
     """
     Creates a cover page with centered title.
-    
+
     Args:
         title: Title text
-        
+
     Returns:
         PdfReader with the created page
     """
@@ -297,17 +301,17 @@ def create_page(title: str) -> PdfReader:
     can.showPage()
     can.save()
     packet.seek(0)
-    
+
     return PdfReader(packet)
 
 
 def merge_files(sections: List[Tuple[str, List[Tuple[str, io.BytesIO]]]]) -> io.BytesIO:
     """
     Merges multiple PDFs into a single file with separator pages.
-    
+
     Args:
         sections: List of tuples (section_title, pdf_list)
-        
+
     Returns:
         BytesIO containing the merged PDF
     """
@@ -321,8 +325,7 @@ def merge_files(sections: List[Tuple[str, List[Tuple[str, io.BytesIO]]]]) -> io.
 
     for idx, (title, pdfs) in enumerate(sections, 1):
         logger.info(f"[Section {idx}/{len(sections)}] Processing: {title}")
-        
-        # Add section cover page
+
         try:
             cover = create_page(title)
             writer.add_page(cover.pages[0])
@@ -332,53 +335,52 @@ def merge_files(sections: List[Tuple[str, List[Tuple[str, io.BytesIO]]]]) -> io.
             logger.error(f"  ✗ Error creating cover page for '{title}': {e}")
             continue
 
-        # Add all PDFs in the section
         section_page_count = 0
         for name, pdf_io in pdfs:
             try:
-                pdf_io.seek(0)  # Ensure we're at the beginning
+                pdf_io.seek(0)
                 reader = PdfReader(pdf_io)
                 num_pages = len(reader.pages)
-                
+
                 logger.info(f"  Adding: {name} ({num_pages} pages)")
-                
+
                 for page in reader.pages:
                     writer.add_page(page)
                     total_pages += 1
                     section_page_count += 1
-                    
+
             except Exception as e:
                 logger.error(f"  ✗ Error processing {name}: {e}")
                 continue
 
-        # Add blank page after each section (except the last one)
         if idx < len(sections):
             writer.add_blank_page()
             total_pages += 1
-            logger.info(f"  ✓ Section complete: {section_page_count} content pages")
+            logger.info(
+                f"  ✓ Section complete: {section_page_count} content pages")
             logger.info("")
 
     logger.info(f"{'='*60}")
     logger.info(f"✓ Merged PDF created with {total_pages} total pages")
     logger.info(f"{'='*60}\n")
-    
+
     output = io.BytesIO()
     writer.write(output)
     output.seek(0)
-    
+
     return output
 
 
 def upload_pdf(service, pdf_stream: io.BytesIO, file_name: str, folder_id: str) -> str:
     """
     Uploads a PDF to Google Drive and makes it public.
-    
+
     Args:
         service: Authenticated Google Drive service
         pdf_stream: PDF stream
         file_name: File name
         folder_id: Destination folder ID
-        
+
     Returns:
         Public URL of the file
     """
@@ -387,16 +389,16 @@ def upload_pdf(service, pdf_stream: io.BytesIO, file_name: str, folder_id: str) 
             'name': file_name,
             'parents': [folder_id]
         }
-        
+
         pdf_stream.seek(0)
         size_mb = len(pdf_stream.getvalue()) / (1024 * 1024)
         logger.info(f"Uploading {file_name} ({size_mb:.2f} MB)...")
-        
+
         # Create temporary file for upload
         temp_file = f"temp_{file_name}"
         with open(temp_file, 'wb') as f:
             f.write(pdf_stream.getvalue())
-        
+
         media = MediaFileUpload(
             temp_file,
             mimetype='application/pdf',
@@ -408,25 +410,24 @@ def upload_pdf(service, pdf_stream: io.BytesIO, file_name: str, folder_id: str) 
             media_body=media,
             fields='id, webViewLink'
         ).execute()
-        
-        # Remove temporary file
+
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
-        # Make file public
-        logger.info("Setting file permissions to public...")
-        service.permissions().create(
-            fileId=file['id'],
-            body=PUBLIC_ACCESS
-        ).execute()
+        if PUBLIC_DESTINATION == 'yes':
+            logger.info("Setting file permissions to public...")
+            service.permissions().create(
+                fileId=file['id'],
+                body=PUBLIC_ACCESS
+            ).execute()
 
         web_view_link = f"https://drive.google.com/file/d/{file['id']}/view?usp=sharing"
         logger.info(f"✓ PDF uploaded successfully!")
         logger.info(f"✓ File ID: {file['id']}")
-        logger.info(f"✓ Public link: {web_view_link}")
-        
+        logger.info(f"✓ URL: {web_view_link}")
+
         return web_view_link
-        
+
     except HttpError as e:
         logger.error(f"HTTP error during upload: {e}")
         logger.error("Make sure:")

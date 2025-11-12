@@ -1,0 +1,19 @@
+# Credentials & tokens
+credentials.json
+token.json
+
+# PDFs (never commit!)
+*.pdf
+
+# Python
+__pycache__/
+*.pyc
+.env
+service-account-key.json
+credentials.json
+token.json
+pdf_merger.log
+.venv
+venv
+temp_*.pdf
+.DS_Store

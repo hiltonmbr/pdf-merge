@@ -386,7 +386,7 @@ def upload_pdf(service, pdf_stream: io.BytesIO, file_name: str, folder_id: str) 
         Public URL of the file 
     """
     try:
-        # Check if file already exists in the folder
+
         query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
         results = service.files().list(
             q=query,

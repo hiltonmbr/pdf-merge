@@ -374,6 +374,7 @@ def merge_files(sections: List[Tuple[str, List[Tuple[str, io.BytesIO]]]]) -> io.
 def upload_pdf(service, pdf_stream: io.BytesIO, file_name: str, folder_id: str) -> str:
     """
     Uploads a PDF to Google Drive and makes it public.
+    If a file with the same name exists in the folder, it will be updated.
 
     Args:
         service: Authenticated Google Drive service
@@ -382,19 +383,22 @@ def upload_pdf(service, pdf_stream: io.BytesIO, file_name: str, folder_id: str) 
         folder_id: Destination folder ID
 
     Returns:
-        Public URL of the file
+        Public URL of the file 
     """
     try:
-        file_metadata = {
-            'name': file_name,
-            'parents': [folder_id]
-        }
+        # Check if file already exists in the folder
+        query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+        results = service.files().list(
+            q=query,
+            fields="files(id, name)",
+            spaces='drive'
+        ).execute()
+
+        existing_files = results.get('files', [])
 
         pdf_stream.seek(0)
         size_mb = len(pdf_stream.getvalue()) / (1024 * 1024)
-        logger.info(f"Uploading {file_name} ({size_mb:.2f} MB)...")
 
-        # Create temporary file for upload
         temp_file = f"temp_{file_name}"
         with open(temp_file, 'wb') as f:
             f.write(pdf_stream.getvalue())
@@ -405,11 +409,33 @@ def upload_pdf(service, pdf_stream: io.BytesIO, file_name: str, folder_id: str) 
             resumable=True
         )
 
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id, webViewLink'
-        ).execute()
+        if existing_files:
+            file_id = existing_files[0]['id']
+            logger.info(
+                f"File '{file_name}' already exists. Updating... ({size_mb:.2f} MB)")
+
+            file = service.files().update(
+                fileId=file_id,
+                media_body=media,
+                fields='id, webViewLink'
+            ).execute()
+
+            logger.info(f"✓ PDF updated successfully!")
+        else:
+            logger.info(f"Uploading {file_name} ({size_mb:.2f} MB)...")
+
+            file_metadata = {
+                'name': file_name,
+                'parents': [folder_id]
+            }
+
+            file = service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, webViewLink'
+            ).execute()
+
+            logger.info(f"✓ PDF uploaded successfully!")
 
         if os.path.exists(temp_file):
             os.remove(temp_file)
@@ -422,7 +448,6 @@ def upload_pdf(service, pdf_stream: io.BytesIO, file_name: str, folder_id: str) 
             ).execute()
 
         web_view_link = f"https://drive.google.com/file/d/{file['id']}/view?usp=sharing"
-        logger.info(f"✓ PDF uploaded successfully!")
         logger.info(f"✓ File ID: {file['id']}")
         logger.info(f"✓ URL: {web_view_link}")
 
@@ -438,3 +463,6 @@ def upload_pdf(service, pdf_stream: io.BytesIO, file_name: str, folder_id: str) 
     except Exception as e:
         logger.error(f"Unexpected error during upload: {e}")
         raise
+    finally:
+        if os.path.exists(temp_file):
+            os.remove(temp_file)

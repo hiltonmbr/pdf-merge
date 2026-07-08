@@ -5,20 +5,13 @@
         "**/.hg": true,
         "**/.DS_Store": true,
         "**/Thumbs.db": true,
+        "**/.venv/": true,
+        "**/.claude/": true,
+        "**/.agents/": true,
+        "**/.codex/": true,
+        "**/.pytest_cache/": true,
+        "**/.ruff_cache/": true,
         "**/__pycache__": true,
 
-    },
-    "cSpell.words": [
-        "creds",
-        "dotenv",
-        "googleapiclient",
-        "levelname",
-        "pagesizes",
-        "pdfgen",
-        "pdfs",
-        "pyproject",
-        "reportlab",
-        "subfolders",
-        "virtualenvs"
-    ]
+    }
 }
